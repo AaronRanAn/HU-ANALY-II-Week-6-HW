@@ -1,0 +1,165 @@
+---
+title: "Cross-Validation"
+author: "James Muguira"
+date: "May 23, 2016"
+output: html_document
+---
+
+We are going to work on Cross-Validation.  Please read chapter 5 of An Introduction to Statistical Learning in R.
+
+I'll work with the Auto data set. It is similar to mtcars.
+
+*1st, I'll introduce some concepts in the slides.*
+
+*2nd, I'll work through a traditional linear model*
+
+*3rd, Explain assumptions*
+
+*4th, Attack the problem with Bootstrapping*
+
+*5th, Compare*
+
+# Traditional Linear Model
+
+Using the Auto data set of 392 observations about cars. Find a linear model and investigate the model.
+
+```{r}
+library(ISLR)
+data("Auto")
+library(boot)
+str(Auto)
+cor(Auto[1:8])
+```
+
+Casual investigation reveals that just like mtcars, Displacement, weight, horsepower, cylinders are all strongly correlated to mpg. If it was our job to produce a "best fit" model we would use these variables.
+
+## A simpler model to work from
+
+Let's reduce the number of variables for a moment.  Let's model mpg as a function of just horsepower to make a point.
+
+```{r}
+Auto_lm2 = lm(mpg ~ horsepower, data=Auto)
+summary(Auto_lm2)
+```
+
+This model describes about 60% of the variation in the data.  Not a bad model. 
+
+However, there were a number of assumptions made when we decided to use linear regression to model this system:
+
+* first, the linear model depends on us knowing the standard deviation (sigma^2). This assumption is not a problem IF the raw data is linear.  However, if there is ANY non-linear component to the raw data we are glossing over it using linear models. This means our standard deviation is over estimated and this could cause problems with datasets that are small (few observations).
+
+* All variation in the experiment that produced the data comes from the errors.  Said another way we assume that we are perfect modelers and experiment builders and that chance is the only source of error/variation.  This is not realistic with real-world data!!!
+
+To arrive at this model we followed a process:
+
+*Describe the dataset*
+
+*Create a linear model from the data (using all the data)*
+
+*Investigate the Standard Error (SE) and Mean Standard Error (MSE) to see if we can live with them.*
+
+But our process just takes one pass on the data. For these small datasets that might ok.  We could use R's step() function to try and improve the model fit. However, we are not using the data to our best advantage.
+
+If we partition the data into a training and testing set we can compare and further refine the model fit by reducing the SE and MSE. That is where Cross-Validation would be used. You can read the sections in Chapter 5 of An Introduction to Statistical Learning in R (ISLR).
+
+# Boot Strapping
+
+Bootstrapping does not make these assumptions.  This is one of the reasons it is so powerful.  Boot Strapping works directly on the data to produce a best fit model.
+
+To see boot strapping action let's work through a few examples. The first example is also discussed in ISLR. We examine the Portfolio dataset.
+
+```{r}
+str(Portfolio)
+```
+
+Let's implement equation 5.7 from ISLR for the Portfolio dataset.
+
+```{r}
+# this code is from An Introduction to Statistical Learning in R chapter 5
+alpha.fn=function(data,index){
+  X=data$X[index]
+  Y=data$Y[index]
+  return((var(Y)-cov(X,Y))/(var(X)+var(Y)-2*cov(X,Y))) 
+}
+```
+
+The Portfolio dataset gives us the returns on two fictional investments. We invest a fraction of our money alpha in X and the balance 1-alpha in investment Y. We are seeking to minimize the total risk (or maximize the total return) of our investment, alpha.  Equation 5.7 is the formula to model that risk.
+
+To use equation 5.7 to estimate the return for 1 single pass over the data we do the following:
+
+```{r}
+alpha.fn(Portfolio, 1:100)
+
+# Sampling form the Portfolio dataset (replacement = T) produces, in effect a new data set with 100 # observations and a new alpha (our maximized return).
+
+set.seed(1)
+alpha.fn(Portfolio, sample(100, 100, replace=T))
+```
+
+But we want to automate the process and search for a solution within a new dataset with 1000 samples. To do this we want to use the R boot function.
+
+```{r}
+boot(Portfolio, alpha.fn, R=1000)
+```
+
+So, our estimated return is 57% and our Standard Error (SE) is 8%. This is pretty good. But the power of bootstrapping comes in estimating the accuracy of our linear model. 
+
+# The Auto dataset revisited
+
+Let's return to the Auto dataset from earlier. Here is equation 5.7 for the Auto dataset.  The equation is our function we will use to minimize error.
+
+```{r}
+boot.fn=function(data, index) {
+  return(coef(lm(mpg~horsepower, data=data, subset=index)))
+}
+```
+
+Now let's see how bootstrap preforms:
+
+```{r}
+boot(Auto, boot.fn, 1000)
+summary(Auto_lm2)
+```
+
+Humm, the bootstrap method came up with a different SE? Why? Remember that regression assumes that our measure of independent variables is perfect and that all of the error is given by chance.  The Auto dataset is NOT linear (it is close, but not perfect).  The regression equation is underestimating the SE while the bootstrap is closer the real SE. This is because the bootstrap does not depend on the linearity of the data.
+
+Can we see that non-linearity? Yes, in fact we should have plotted the variables to begin with.  In some cases, even though you know you have SOME non-linearity you may still want to use a linear model. Why? Because a line is easy to explain and understand!
+
+```{r}
+# let's plot mpg as a function of horsepower
+plot(Auto$horsepower, Auto$mpg)
+abline(lm(Auto$mpg ~ Auto$horsepower, data=Auto))
+```
+
+You can clearly see that the relationship is not linear.  It is close and for some applications it might be close enough, but it is not linear!
+
+# Back to MTCARS
+
+We can do the same thing with mtcars.
+
+```{r}
+# equation 5.7 for mtcars - our function to minimize
+mtcars.fn=function(data, index) {
+  return(coef(lm(mpg~hp, data=data, subset=index)))
+}
+
+# our linear model
+mt = lm(mpg ~ hp, data=mtcars)
+summary(mt)
+# now compute the bootstrap esimate.
+boot(mtcars, mtcars.fn, R=1000)
+```
+
+Notice that bootstrap and lm produce the same coefficients.  Also, notice that the difference between the linear model and bootstrapping indicates some non-linearity in the mtcars dataset!
+
+Again, this can be visualized.
+
+```{r}
+plot(mtcars$hp, mtcars$mpg)
+abline(lm(mtcars$mpg ~ mtcars$hp, data=mtcars))
+```
+
+
+# Conclusion
+
+Mtcars and Auto are well-defined datasets. Modeling real world data is much more difficult. A key aspect of modeling is quantifying how accurate they are.  Producing a Standard Error and Mean Squared Error for your real world model is the only way you can assess your work.  Thus, you need those error estimates to be accurate.
